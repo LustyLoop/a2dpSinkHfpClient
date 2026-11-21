@@ -115,6 +115,7 @@ esp_err_t bt_gap_set_pin(const char *pin_code, uint8_t pin_len);
  */
 esp_err_t bt_gap_get_pin(char *pin_code, uint8_t *pin_len);
 
+
 #ifdef __cplusplus
 }
 #endif

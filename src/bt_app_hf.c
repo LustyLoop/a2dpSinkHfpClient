@@ -276,6 +276,10 @@ void bt_app_hf_client_cb(esp_hf_client_cb_event_t event, esp_hf_client_cb_param_
                     param->conn_stat.chld_feat);
             memcpy(peer_addr,param->conn_stat.remote_bda,ESP_BD_ADDR_LEN);
             if (param->conn_stat.state == ESP_HF_CLIENT_CONNECTION_STATE_SLC_CONNECTED) {
+                if (get_battery_level() >= 0) {
+                    esp_hf_client_send_xapl("0000-0000-0100", 2);
+                    a2dpSinkHfpHf_send_iphoneaccev((get_battery_level() >= 90) ? 9 : (get_battery_level() / 10), -1);
+                }
                 #if CONFIG_BT_PBAC_ENABLED
                     esp_pbac_connect(peer_addr);
                 #endif
@@ -430,9 +434,12 @@ void bt_app_hf_client_cb(esp_hf_client_cb_event_t event, esp_hf_client_cb_param_
 
         case ESP_HF_CLIENT_VOLUME_CONTROL_EVT:
         {
+            uint8_t local_volume = param->volume_control.volume * 8
+             / 15;
             ESP_LOGI(BT_HF_TAG, "--volume_target: %s, volume %d",
                     c_volume_control_target_str[param->volume_control.type],
-                    param->volume_control.volume);
+                    local_volume);
+            bt_i2s_set_hfp_speaker_volume(local_volume); // change volume of hfp mode. 7 max comfort volume
             break;
         }
 
@@ -503,6 +510,8 @@ void bt_app_hf_client_cb(esp_hf_client_cb_event_t event, esp_hf_client_cb_param_
             break;
     }
 }
+
+
 
 esp_err_t bt_app_hf_connect_audio(void)
 {

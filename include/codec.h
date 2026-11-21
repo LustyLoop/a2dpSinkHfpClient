@@ -72,6 +72,5 @@ int a2dp_sbc_dec_data(const uint8_t *in_data, size_t in_data_len,
  */
 void i2s_32bit_to_16bit_pcm(const int32_t *i2s_data, uint8_t *pcm_data, size_t num_samples);
 
-void msbc_enc_reset_frame_count(void);
 
 #endif // CODEC_H

@@ -36,6 +36,9 @@
 #define RINGBUF_HIGHEST_WATER_LEVEL (32 * 1024)
 #define RINGBUF_PREFETCH_WATER_LEVEL (20 * 1024)
 
+// A2DP decode buffer size
+#define A2DP_SBC_DECODE_BUFFER_SIZE 4096  // Use a fixed buffer for incoming SBC data
+
 // HFP ringbuffer watermarks
 #define RINGBUF_HFP_TX_HIGHEST_WATER_LEVEL (32 * MSBC_FRAME_SAMPLES * 2)
 #define RINGBUF_HFP_TX_PREFETCH_WATER_LEVEL (20 * MSBC_FRAME_SAMPLES * 2)
@@ -574,7 +577,7 @@ void bt_i2s_a2dp_stop(void) {
     }
     
     if (s_a2dp_sbc_packet_ready_sem) {
-        xSemaphoreGive(s_a2dp_sbc_packet_ready_sem);
+        xSemaphoreGive(s_a2dp_sbc_packet_ready_sem); // Wake decoder for every packet
     }
     
     // Wait for both tasks to exit
@@ -662,11 +665,16 @@ void bt_i2s_a2dp_write_sbc_encoded_ringbuf(const uint8_t *data, uint32_t len) {
     }
     
     /* FAST: Just copy raw SBC frame - BTC callback exits immediately */
-    xRingbufferSend(s_a2dp_sbc_encoded_ringbuf, (void *)data, len, 0);
-    
-    if (s_a2dp_sbc_packet_size > 0 && len == s_a2dp_sbc_packet_size) {
+    if (xRingbufferSend(
+        s_a2dp_sbc_encoded_ringbuf,
+        (void *)data,
+        len,
+        0) == pdTRUE) {
+
+    if (s_a2dp_sbc_packet_ready_sem != NULL) {
         xSemaphoreGive(s_a2dp_sbc_packet_ready_sem);
     }
+}
 }
 
 // ============================================================================
@@ -692,45 +700,56 @@ static void bt_i2s_a2dp_decode_task_handler(void *arg) {
         return;
     }
     
-    uint8_t *sbc_buffer = (uint8_t *)malloc(s_a2dp_sbc_packet_size);
+    
+
+uint8_t *sbc_buffer = (uint8_t *)malloc(
+    A2DP_SBC_DECODE_BUFFER_SIZE
+);
     if (sbc_buffer == NULL) {
         ESP_LOGE(BT_I2S_TAG, "Failed to allocate SBC buffer");
         vTaskDelete(NULL);
         return;
     }
     
-    size_t sbc_buffer_fill = 0;
+    size_t sbc_buffer_fill = 0; // Keep unprocessed SBC data between packets
     uint8_t *sbc_data = NULL;
     size_t sbc_data_len = 0;
     bool decoder_opened = false;
     
     ESP_LOGI(BT_I2S_TAG, "A2DP SBC decode task ready (packet_size=%d)", s_a2dp_sbc_packet_size);
     
-    while (s_bt_i2s_a2dp_decode_task_running) {
-        if (xSemaphoreTake(s_a2dp_sbc_packet_ready_sem, portMAX_DELAY) != pdTRUE) {
-            continue;
-        }
-        
-        sbc_buffer_fill = 0;
-        while (sbc_buffer_fill < s_a2dp_sbc_packet_size) {
-            /* Try to get remaining bytes - xRingbufferReceiveUpTo handles wrapping */
-            sbc_data = xRingbufferReceiveUpTo(s_a2dp_sbc_encoded_ringbuf, &sbc_data_len,
-                                               pdMS_TO_TICKS(10), /* SHORT timeout for fragments */
-                                               s_a2dp_sbc_packet_size - sbc_buffer_fill);
-            
-            if (sbc_data == NULL || sbc_data_len == 0) {
-                if (sbc_buffer_fill > 0) {
-                    /* We got partial data but timed out - keep waiting */
-                    continue;
-                }
-                break; /* No data at all */
-            }
-            
-            /* Copy what we got */
-            memcpy(&sbc_buffer[sbc_buffer_fill], sbc_data, sbc_data_len);
-            sbc_buffer_fill += sbc_data_len;
-            vRingbufferReturnItem(s_a2dp_sbc_encoded_ringbuf, sbc_data);
-        }
+   while (s_bt_i2s_a2dp_decode_task_running) {
+    if (xSemaphoreTake(s_a2dp_sbc_packet_ready_sem, portMAX_DELAY) != pdTRUE) {
+        continue;
+    }
+
+    while (sbc_buffer_fill < A2DP_SBC_DECODE_BUFFER_SIZE) {
+    sbc_data_len = 0;
+
+    sbc_data = xRingbufferReceiveUpTo(
+        s_a2dp_sbc_encoded_ringbuf,
+        &sbc_data_len,
+        0,
+        A2DP_SBC_DECODE_BUFFER_SIZE - sbc_buffer_fill
+    );
+
+    if (sbc_data == NULL || sbc_data_len == 0) {
+        break;
+    }
+
+    memcpy(
+        &sbc_buffer[sbc_buffer_fill],
+        sbc_data,
+        sbc_data_len
+    );
+
+    sbc_buffer_fill += sbc_data_len; // Add the new data to the buffer
+
+    vRingbufferReturnItem(
+        s_a2dp_sbc_encoded_ringbuf,
+        sbc_data
+    );
+}
         
         if (!decoder_opened) {
             if (a2dp_sbc_dec_open(A2DP_SAMPLE_RATE, A2DP_CH_COUNT) == 0) {
@@ -742,14 +761,14 @@ static void bt_i2s_a2dp_decode_task_handler(void *arg) {
         }
         
         /* Decode packet */
-        size_t offset = 0;
-        while (offset < s_a2dp_sbc_packet_size) {
+        size_t offset = 0; // Track how much data was decoded
+        while (offset < sbc_buffer_fill) {
             uint8_t decoded_pcm[2048];
             size_t decoded_len = 0;
             size_t consumed = 0;
             
             int ret = a2dp_sbc_dec_data(&sbc_buffer[offset],
-                                         s_a2dp_sbc_packet_size - offset,
+                                         sbc_buffer_fill - offset,
                                          decoded_pcm, &decoded_len, &consumed);
             
             if (ret == 0 && decoded_len > 0) {
@@ -763,6 +782,21 @@ static void bt_i2s_a2dp_decode_task_handler(void *arg) {
             if (consumed == 0) break;
             offset += consumed;
         }
+// Keep unprocessed data for the next packet
+if (offset > 0) {
+    size_t remaining = sbc_buffer_fill - offset;
+
+    if (remaining > 0) {
+        memmove(
+            sbc_buffer,
+            &sbc_buffer[offset],
+            remaining
+        );
+    }
+
+    sbc_buffer_fill = remaining; // Keep unprocessed data for the next packet
+}
+
     }
     
     if (decoder_opened) {

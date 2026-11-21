@@ -1,5 +1,4 @@
 menu "A2DP Sink + HFP Client Configuration"
-
     config A2DPSINK_HFPHF_DEVICE_NAME
         string "Bluetooth Device Name"
         default "ESP32-audio"
@@ -8,9 +7,9 @@ menu "A2DP Sink + HFP Client Configuration"
 
     config A2DPSINK_HFPHF_PIN_CODE
         string "Bluetooth PIN Code"
-        default "5678"
+        default "1234"
         help
-            PIN code for Bluetooth pairing (4-16 digits).
+            PIN code for Bluetooth pairing (4-16 digits)
 
     config A2DPSINK_HFPHF_COUNTRY_CODE
         string "Country Code for Phonebook"

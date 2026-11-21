@@ -3,6 +3,7 @@
 
 #include "esp_a2dp_api.h"
 #include "esp_avrc_api.h"
+#include "esp_gap_bt_api.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -11,6 +12,8 @@ extern "C" {
 /* A2DP initialization */
 esp_err_t a2dp_sink_init(void);
 esp_err_t a2dp_sink_deinit(void);
+
+bool bt_is_bonded(const esp_bd_addr_t target);
 
 /* A2DP callback handlers */
 void bt_app_a2d_cb(esp_a2d_cb_event_t event, esp_a2d_cb_param_t *param);
@@ -25,6 +28,9 @@ void bt_app_rc_tg_cb(esp_avrc_tg_cb_event_t event, esp_avrc_tg_cb_param_t *param
 
 /* Connection state check */
 bool a2dp_sink_is_connected(void);
+
+/* Get the Bluetooth address of the last connected device */
+esp_err_t bt_get_last_connected_bd_addr(uint8_t *bda);
 
 #ifdef __cplusplus
 }

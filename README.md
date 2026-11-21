@@ -1,3 +1,64 @@
+# ESP32 Bluetooth A2DP Sink & HFP Client (`a2dpSinkHfpClient` — Maintained Fork)
+
+Enhanced fork of the **ESP-IDF** component for **ESP32** that turns a microcontroller into a Bluetooth audio sink and hands-free unit: streams music via **A2DP** (with **AVRCP** metadata/controls) and handles voice calls via **HFP Client** over **I2S**.
+
+
+## Added in Fork
+
+### 1. Automatic Reconnection to a Known Phone
+The device remembers the phone it was connected to and automatically attempts to restore the connection upon power-on. It makes up to `BT_RECONNECT_MAX_ATTEMPTS` attempts with increasing intervals. If the phone has "forgotten" the device (authentication fails), it stops trying.
+
+New `#define` macros in `a2dpSinkHfpHf.c`:
+
+| Define | Value | Meaning |
+| :--- | :---: | :--- |
+| `BT_RECONNECT_FIRST_DELAY_MS` | `1000` | Delay (ms) before the first attempt after power-on |
+| `BT_RECONNECT_RETRY_DELAY_MS` | `5000` | Pause (ms) between retry attempts |
+| `BT_RECONNECT_MAX_ATTEMPTS` | `10` | Maximum number of attempts before giving up |
+
+New functions: `bt_auto_reconnect()`, `bt_boot_connect_policy()`, `bt_reconnect_on_a2dp_state()`.
+
+### 2. Proper Identification as "Headphones"
+The device advertises itself to the phone as **Headphones** (Class of Device: Audio/Video → Headphones). The phone immediately displays the headphones icon and properly routes call and music audio.
+
+### 3. Battery Level
+Added the `set_battery_level(int8_t battery_level)` function — stores a value that can then be sent to the connected phone (iPhone, Android, Windows). Also includes `get_battery_level()`.
+
+### 4. Microphone Gain Configuration (`codec.c`)
+
+| Define | Value | Meaning |
+| :--- | :---: | :--- |
+| `MIC_PCM_RSHIFT` | `14` | Number of bits to right-shift 32-bit I2S samples when converting to 16-bit PCM. **The smaller the number, the louder the signal.** Scale: 16 = 0 dB, 15 = +6 dB, 14 = +12 dB, 13 = +18 dB |
+
+Currently set to `14` → **+12 dB** gain relative to the "neutral" 0 dB. This compensates for the quiet signal from an I2S microphone (INMP441 and similar models output data in the most significant bits, so a simple 16-bit shift results in overly quiet PCM).
+
+### 5. A2DP: SBC Decoder No Longer Depends on Packet Size (`bt_i2s.c`)
+
+**Problem.** On some phones, audio stuttered/broke up during A2DP playback. Different phones segment the SBC stream differently: the number of frames per packet and packet sizes vary. Meanwhile, the decoder assumed a fixed size equal to `s_a2dp_sbc_packet_size`:
+
+- the receive callback only gave the semaphore when `len == s_a2dp_sbc_packet_size`, so packets of any other size failed to wake up the decoder;
+- the decoding task waited to accumulate exact single expected packets and processed only those bytes;
+- the undecoded tail was discarded, causing an audio dropout at every packet boundary.
+
+**What Changed.**
+
+- Added the `A2DP_SBC_DECODE_BUFFER_SIZE` constant (4096 bytes). The decoder buffer is now fixed and no longer tied to packet size.
+- The receive callback gives the semaphore after every successful write to the ring buffer (`xRingbufferSend == pdTRUE`), rather than only on exact length matches.
+- The decoding task pulls all available data from the ring buffer (0 timeout) and accumulates it in `sbc_buffer`.
+- Decoding runs based on the actual accumulated data (`sbc_buffer_fill`), rather than `s_a2dp_sbc_packet_size`.
+- Any unprocessed remainder (an incomplete SBC frame) is shifted to the beginning of the buffer via `memmove` and appended with the next packet.
+
+**Result**
+- In my tests, the new version works on every phone tested. The old version had choppy audio on some devices. The root cause was identified via code analysis: on devices with non-standard packet segmentation, the old logic dropped data, whereas the new logic is independent of segmentation.
+- Now the ESP32 runs stably at 80 MHz, unlike the old version.
+
+**Known Limitations.**
+
+- If the decoder returns `consumed == 0` on corrupted data (loss of sync), the buffer is not cleared. Once 4096 bytes are filled, new data stops being accepted until reconnection. A buffer reset or byte-by-byte sync search is needed.
+- If the ring buffer overflows, the packet is silently dropped without giving the semaphore or logging an error.
+
+## Original README:
+
 # a2dpSinkHfpClient
 
 **ESP-IDF Component for Bluetooth Classic Audio & Hands-Free**
@@ -98,10 +159,7 @@ a2dpSinkHfpHf_dial_number("5551234567");
 a2dpSinkHfpHf_start_voice_recognition();
 
 // Set speaker volume (0-15)
-a2dpSinkHfpHf_volume_update(0, 14);
-
-// Set microphone volume (0-15)
-a2dpSinkHfpHf_volume_update(1, 14);
+a2dpSinkHfpHf_volume_update("spk", 12);
 ```
 
 ### Music Control Example
@@ -166,8 +224,8 @@ esp_err_t a2dpSinkHfpHf_stop_voice_recognition(void);
 
 ### Volume Control
 ```c
-esp_err_t a2dpSinkHfpHf_volume_update(uint8_t target, int volume);
-// target: 0 for speaker or 1 for mic, volume: 0-15
+esp_err_t a2dpSinkHfpHf_volume_update(const char *target, int volume);
+// target: "spk" or "mic", volume: 0-15
 ```
 
 ### Phone Queries

@@ -19,6 +19,19 @@ typedef struct a2dpSinkHfpHf_contact_t a2dpSinkHfpHf_contact_t;
 typedef struct a2dpSinkHfpHf_phone_number_t a2dpSinkHfpHf_phone_number_t;
 typedef void* a2dpSinkHfpHf_phonebook_handle_t;
 
+
+
+/**
+ * @brief Open a pairing window for new devices.
+ *
+ * Stops auto-reconnect, allows pairing, and makes the device discoverable.
+ * The window closes automatically after @p timeout_ms, or stays open if 0.
+ * Call after a2dpSinkHfpHf_init(). Does not delete existing bonds.
+ *
+ * @param timeout_ms  Window duration in ms (0 = no timeout; 120000 recommended).
+ */
+esp_err_t a2dpSinkHfpHf_enter_pairing_mode(uint32_t timeout_ms);
+
 /**
  * @brief Bluetooth connection state callback
  * @param connected true if connected, false if disconnected
@@ -228,10 +241,10 @@ esp_err_t a2dpSinkHfpHf_stop_voice_recognition(void);
 
 /**
  * @brief Update speaker or microphone volume
- * @param target 0 for speaker, 1 for microphone
+ * @param target "spk" for speaker, "mic" for microphone
  * @param volume Volume level (0-15)
  */
-esp_err_t a2dpSinkHfpHf_volume_update(uint8_t target, int volume);
+esp_err_t a2dpSinkHfpHf_volume_update(const char *target, int volume);
 
 esp_err_t a2dpSinkHfpHf_query_operator(void);
 esp_err_t a2dpSinkHfpHf_query_current_calls(void);
@@ -317,6 +330,27 @@ esp_err_t a2dpSinkHfpHf_set_hfp_mic_volume(uint8_t volume);
  * @return ESP_OK on success, error code otherwise
  */
 esp_err_t a2dpSinkHfpHf_set_a2dp_volume(uint8_t volume);
+
+
+/**
+ * @brief Send AT+XAPL to enable accessory features (e.g., battery reporting).
+ *        Call once after HFP SLC connection.
+ * @param features Format: "VendorID-ProductID-Version,Features" (e.g., "0000-0000-0100,2").
+ * @return ESP_OK on success, or error code.
+ */
+esp_err_t a2dpSinkHfpHf_send_xapl(const char *features);
+
+/**
+ * @brief Send battery level and dock status via AT+IPHONEACCEV.
+ * @param bat_level Battery level (0..9), or -1 to omit.
+ * @param docked    Dock status (0 = undocked, 1 = docked), or -1 to omit.
+ * @return ESP_OK on success, or error code.
+ */
+esp_err_t a2dpSinkHfpHf_send_iphoneaccev(int bat_level, int docked);
+
+void set_battery_level(int8_t battery_level_percent);
+
+int8_t get_battery_level();
 
 
 #ifdef __cplusplus

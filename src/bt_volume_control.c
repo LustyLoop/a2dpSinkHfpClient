@@ -25,8 +25,8 @@ static SemaphoreHandle_t g_mutex = NULL;
 static bool g_initialized = false;
 
 // Current volume state
-static uint8_t g_current_a2dp_volume = 10;
-static uint8_t g_current_hfp_speaker_volume = 12;
+static uint8_t g_current_a2dp_volume = 5;
+static uint8_t g_current_hfp_speaker_volume = 8;
 static uint8_t g_current_hfp_mic_volume = 10;
 
 // Mute state per target
@@ -44,7 +44,7 @@ static uint8_t g_hfp_mic_volume_before_mute = 0;
  */
 static esp_err_t apply_hfp_speaker_volume(uint8_t volume)
 {
-    esp_err_t ret = a2dpSinkHfpHf_volume_update(0, volume);
+    esp_err_t ret = a2dpSinkHfpHf_volume_update("spk", volume);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to set HFP speaker volume: %s", esp_err_to_name(ret));
         return ret;
@@ -66,7 +66,7 @@ static esp_err_t apply_hfp_speaker_volume(uint8_t volume)
  */
 static esp_err_t apply_hfp_mic_volume(uint8_t volume)
 {
-    esp_err_t ret = a2dpSinkHfpHf_volume_update(1, volume);
+    esp_err_t ret = a2dpSinkHfpHf_volume_update("mic", volume);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to set HFP mic volume: %s", esp_err_to_name(ret));
         return ret;
