@@ -57,6 +57,10 @@ Currently set to `14` → **+12 dB** gain relative to the "neutral" 0 dB. This c
 - If the decoder returns `consumed == 0` on corrupted data (loss of sync), the buffer is not cleared. Once 4096 bytes are filled, new data stops being accepted until reconnection. A buffer reset or byte-by-byte sync search is needed.
 - If the ring buffer overflows, the packet is silently dropped without giving the semaphore or logging an error.
 
+### 6. Added HF mode volume adjustment 
+
+Previously, volume adjustment had no effect in HF mode on test devices. This release resolves the HF mode volume issue.
+
 ## Original README:
 
 # a2dpSinkHfpClient
